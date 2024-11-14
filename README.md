@@ -1,4 +1,4 @@
-# Foreing Language Sentence Creation Application
+# Foreign Language Sentence Creation Application
 
 This python script pulls studied/learned cards from Anki foreign language vocabulary decks, compiles the words and asks ChatGPT for sentences of a specific level of grammatical difficulty in your native language. The intent is to practice translating to your foreign language with these generated sentences.
 

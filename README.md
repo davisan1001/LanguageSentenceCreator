@@ -24,7 +24,8 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
   ```
 - Add a '.env' file to the root directory of the application and add the following information
   ```
-  CHATGPT_API_KEY = "bolt://<Neo4J_DB_Address>:7687"
+  CHATGPT_API_KEY = <api_key>
+  ETC.. TODO
   ```
 
 ### Executing program

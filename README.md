@@ -30,3 +30,10 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
 ### Executing program
 
 - Once you have everything setup, simply run the python script with `python3 generateSentences.py`
+
+
+## For the Developer
+
+### Dumping pip Requirements
+
+- Run `pip freeze > requirements.txt`

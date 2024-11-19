@@ -13,7 +13,7 @@ CHATGPT_API_KEY = os.getenv('CHATGPT_API_KEY')
 INCLUDE_DECKS = os.getenv("INCLUDE_DECKS")
 DECK_FIELDS = os.getenv("DECK_FIELDS")
 
-CLEANR = re.compile('<.*?>|\&\S.*?\;') 
+HTML_CLEANR = re.compile('<.*?>|\&\S.*?\;') 
 
 '''
 findCards : Searches for cards based on a query
@@ -36,11 +36,23 @@ cardsInfo : Returns all the information from the card id's given
 '''
 
 def cleanHTML(raw):
-    cleantext = re.sub(CLEANR, '', raw)
+    cleantext = re.sub(HTML_CLEANR, '', raw)
     return cleantext
 
-def cleanText(raw):
-    return cleanHTML(raw).strip()
+def cleanText(raw, remDigits=False):
+    remDigitsPattern = re.compile('\d*')
+
+    HTMLcleanedStr = cleanHTML(raw)
+    if(remDigits):
+        str = re.sub(remDigitsPattern, "", HTMLcleanedStr)
+    return cleanHTML(str).strip()
+
+# TODO: Make this use regex instead (maybe use re.match() ??)
+def addWordPattern(str, pattern):
+    return pattern.replace("<word>", str)
+
+def removeWordPattern(str, pattern):
+    return re.sub(pattern, "", str)
 
 def getAnki(request_data):
     response = requests.post(ANKI_URL, data=request_data)
@@ -69,24 +81,33 @@ def getCardInfo(cardIDs):
     json_request_data = json.dumps(request, indent=2, ensure_ascii=False)
     return getAnki(json_request_data)
 
-def compileFieldList(cardsInfo, deckField):
+def compileCardFieldsList(cardsInfo, deckField, seperator, addPattern='<word>', remPattern=''):
     # TODO: Compile a list of all fields, cleaned and comma seperated.
-    return
+    compiledCardFields = ""
+    numCards = len(cardsInfo)
+
+    for i in range(0, numCards):
+        compiledCardFields += cleanText(addWordPattern(removeWordPattern(cardsInfo[i]['fields'][deckField]['value'], remPattern), addPattern), remDigits=True)
+        if (i < numCards-1):
+            compiledCardFields += seperator
+    return compiledCardFields
 
 def main():
     deckName = INCLUDE_DECKS
     deckField = DECK_FIELDS
+    seperator = ', ' # TODO: Temporary placeholder. Include this option elsewhere to allow user specification.
+    # regex patterns... TODO: Make this user specifiable.
+    addPattern = 'w:<word>' # TODO: Not regex right now, but make it work with regex!
+    remPattern = re.compile('\(.*\)')
     print(deckName)
     print(deckField)
 
     cardIDs = getCardIDs(deckName)
     cardsInfo = getCardInfo(cardIDs)
 
-    fieldList = compileFieldList(cardsInfo, deckField)
-    print(fieldList)
+    compiledCardFieldList = compileCardFieldsList(cardsInfo, deckField, seperator, addPattern, remPattern)
+    print(compiledCardFieldList)
 
-    #print(cleanHTML(cardsInfo[0]['fields'][deckField]['value']))
-    
     return
 
 if __name__ == "__main__":

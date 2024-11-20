@@ -45,6 +45,9 @@ def cleanText(raw, remDigits=False):
     HTMLcleanedStr = cleanHTML(raw)
     if(remDigits):
         str = re.sub(remDigitsPattern, "", HTMLcleanedStr)
+    else:
+        str = HTMLcleanedStr
+
     return cleanHTML(str).strip()
 
 # TODO: Make this use regex instead (maybe use re.match() ??)
@@ -81,13 +84,24 @@ def getCardInfo(cardIDs):
     json_request_data = json.dumps(request, indent=2, ensure_ascii=False)
     return getAnki(json_request_data)
 
-def compileCardFieldsList(cardsInfo, deckField, seperator, addPattern='<word>', remPattern=''):
+def compileCardFieldsList(cardsInfo, deckField, seperator, addPattern='<word>', remPattern='', splitByExistingSeperator=True):
     # TODO: Compile a list of all fields, cleaned and comma seperated.
     compiledCardFields = ""
     numCards = len(cardsInfo)
 
     for i in range(0, numCards):
-        compiledCardFields += cleanText(addWordPattern(removeWordPattern(cardsInfo[i]['fields'][deckField]['value'], remPattern), addPattern), remDigits=True)
+        cleanedField = cleanText(cardsInfo[i]['fields'][deckField]['value'])
+
+        # Split any existing comma seperated words in the field to process individually
+        if (splitByExistingSeperator):
+            splitField = cleanedField.split(', ')
+            for j in range(0, len(splitField)):
+                splitField[j] = cleanText(addWordPattern(removeWordPattern(splitField[j], remPattern), addPattern), remDigits=True)
+            cleanedField = ', '.join(splitField)
+        else:
+            cleanedField = cleanText(addWordPattern(removeWordPattern(cleanedField, remPattern), addPattern), remDigits=True)
+
+        compiledCardFields += cleanedField
         if (i < numCards-1):
             compiledCardFields += seperator
     return compiledCardFields
@@ -97,10 +111,10 @@ def main():
     deckField = DECK_FIELDS
     seperator = ', ' # TODO: Temporary placeholder. Include this option elsewhere to allow user specification.
     # regex patterns... TODO: Make this user specifiable.
-    addPattern = 'w:<word>' # TODO: Not regex right now, but make it work with regex!
+    addPattern = 'w:<word>' # TODO: Not regex right now, but make it regex!
     remPattern = re.compile('\(.*\)')
-    print(deckName)
-    print(deckField)
+    print(deckName) # TODO: Debugging Purposes
+    print(deckField) # TODO: Debugging Purposes
 
     cardIDs = getCardIDs(deckName)
     cardsInfo = getCardInfo(cardIDs)

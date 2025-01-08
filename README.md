@@ -24,8 +24,19 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
   ```
 - Add a '.env' file to the root directory of the application and add the following information
   ```
+  # ChatGPT API Key
   CHATGPT_API_KEY = <api_key>
-  ETC.. TODO
+  
+  # Anki Connect Settings
+  ANKI_URL = http://localhost:<AnkiConnect_port>
+  
+  INCLUDE_DECKS = <deck_1>;<deck_2>;<deck_3>                  # Example:  Korean::어휘::500 Words Book 1;Korean Vocabulary by Evita
+  DECK_FIELDS = <deck_1_field>;<deck_2_field>;<deck_3_field>  # Example:  Korean;Korean
+  
+  # Prompt Settings
+  NATIVE_LANGUAGE = <native_language>                         # Example:  English
+  TARGET_LANGUAGE = <target_language>                         # Example:  Korean
+  GRAMMATICAL_DIFFICULTY_LEVEL = <grammatical_difficulty>     # Example:  ADVANCED (can be e.g. EASY, MEDIUM, ADVANCED, VERY ADVANCED)
   ```
 
 ### Executing program

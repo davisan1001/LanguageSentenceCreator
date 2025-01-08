@@ -7,14 +7,22 @@ import openai
 
 load_dotenv(override=True)
 
-ANKI_URL = os.getenv("ANKI_URL") # 'http://localhost:8765"
 CHATGPT_API_KEY = os.getenv('CHATGPT_API_KEY')
+ANKI_URL = os.getenv("ANKI_URL") # 'http://localhost:8765"
 
-INCLUDE_DECKS = os.getenv("INCLUDE_DECKS")
-DECK_FIELDS = os.getenv("DECK_FIELDS")
+INCLUDE_DECKS = os.getenv("INCLUDE_DECKS").split(';')
+INCLUDE_DECKS = [val.strip() for val in INCLUDE_DECKS]
+DECK_FIELDS = os.getenv("DECK_FIELDS").split(';')
+DECK_FIELDS = [val.strip() for val in DECK_FIELDS]
 
-HTML_CLEANR = re.compile('<.*?>|\&\S.*?\;') 
+NATIVE_LANGUAGE = os.getenv("NATIVE_LANGUAGE")
+TARGET_LANGUAGE = os.getenv("TARGET_LANGUAGE")
+GRAMMATICAL_DIFFICULTY_LEVEL = os.getenv("GRAMMATICAL_DIFFICULTY_LEVEL")
 
+HTML_CLEANR = re.compile('<.*?>|\&\S.*?\;')
+DIGIT_CLEANR = re.compile('\d*')
+
+# Examples
 '''
 findCards : Searches for cards based on a query
 {
@@ -34,21 +42,19 @@ cardsInfo : Returns all the information from the card id's given
     }
 }
 '''
-
-def cleanHTML(raw):
-    cleantext = re.sub(HTML_CLEANR, '', raw)
-    return cleantext
+## ~~~  Text Cleaning Functions  ~~~ ##
 
 def cleanText(raw, remDigits=False):
-    remDigitsPattern = re.compile('\d*')
+    # Clean any HTML in the text
+    cleanedStr = re.sub(HTML_CLEANR, '', raw)
 
-    HTMLcleanedStr = cleanHTML(raw)
+    # Clean any digits from the text (only if remDigits==True)
     if(remDigits):
-        str = re.sub(remDigitsPattern, "", HTMLcleanedStr)
+        str = re.sub(DIGIT_CLEANR, "", cleanedStr)
     else:
-        str = HTMLcleanedStr
+        str = cleanedStr
 
-    return cleanHTML(str).strip()
+    return str.strip()
 
 # TODO: Make this use regex instead (maybe use re.match() ??)
 def addWordPattern(str, pattern):
@@ -57,23 +63,34 @@ def addWordPattern(str, pattern):
 def removeWordPattern(str, pattern):
     return re.sub(pattern, "", str)
 
+
+## ~~~  AnkiConnect Field Extraction Functions  ~~~ ##
+
+# Returns the response section of returned data from AnkiConnect.
+#   Returns "ERROR" if an error occured.
 def getAnki(request_data):
     response = requests.post(ANKI_URL, data=request_data)
     if response.status_code == 200:
         response_json = json.loads(response.content)
         if response_json['error'] == None:
             return response_json['result']
+        else:
+            return "ERROR"
+    else:
+        return "ERROR"
 
+# Returns a list of Anki Card IDs in the deck
 def getCardIDs(deckName):
     request = {}
     params = {}
     request['action'] = 'findCards'
     request['version'] = 6
-    params["query"] = '"deck:' + deckName + '"' + " -is:new"
+    params["query"] = '"deck:' + deckName + '"' + " -is:new -is:suspended" # TODO: Make query parameters modifiable
     request['params'] = params
     json_request_data = json.dumps(request, indent=2, ensure_ascii=False)
     return getAnki(json_request_data)
 
+# Returns a list of Anki Card details from a list of Card IDs
 def getCardInfo(cardIDs):
     request = {}
     params = {}
@@ -84,7 +101,8 @@ def getCardInfo(cardIDs):
     json_request_data = json.dumps(request, indent=2, ensure_ascii=False)
     return getAnki(json_request_data)
 
-def compileCardFieldsList(cardsInfo, deckField, seperator, addPattern='<word>', remPattern='', splitByExistingSeperator=True):
+# Returns a 'seperator' seperated list of words compiled from the 'deckField' of all cards in 'cardsInfo'. Fields extract are also cleaned.
+def compileCardFields(cardsInfo, deckField, seperator=', ', addPattern='<word>', remPattern='', existingSeperatorFilter=',|;', splitByExistingSeperator=False):
     # TODO: Compile a list of all fields, cleaned and comma seperated.
     compiledCardFields = ""
     numCards = len(cardsInfo)
@@ -92,12 +110,12 @@ def compileCardFieldsList(cardsInfo, deckField, seperator, addPattern='<word>', 
     for i in range(0, numCards):
         cleanedField = cleanText(cardsInfo[i]['fields'][deckField]['value'])
 
-        # Split any existing comma seperated words in the field to process individually
+        # Split any existing 'seperator' seperated words in the field to process individually.
         if (splitByExistingSeperator):
-            splitField = cleanedField.split(', ')
+            splitField = re.split(existingSeperatorFilter, cleanedField)
             for j in range(0, len(splitField)):
                 splitField[j] = cleanText(addWordPattern(removeWordPattern(splitField[j], remPattern), addPattern), remDigits=True)
-            cleanedField = ', '.join(splitField)
+            cleanedField = seperator.join(splitField)
         else:
             cleanedField = cleanText(addWordPattern(removeWordPattern(cleanedField, remPattern), addPattern), remDigits=True)
 
@@ -106,21 +124,68 @@ def compileCardFieldsList(cardsInfo, deckField, seperator, addPattern='<word>', 
             compiledCardFields += seperator
     return compiledCardFields
 
+
+## ~~~  LLM Functions  ~~~ ##
+
+# Returns the full prompt for an LLM
+def createLLMPrompt(masterWordList, grammaticalDifficultyLevel, nativeLanguage, targetLanguage): # TODO
+    prompt = "Create 30 sentences of [grammatical_difficulty_level] grammatical difficulty in [native_language] "
+    prompt += "based ONLY on the list of words following this paragraph.\n"
+    prompt += "DO NOT include words that are not included in the following list.\n"
+    prompt += "The intention for these sentences is to be translated from [native_langauge] to [target_language], for practice.\n"
+    prompt += "Along with the list of 50 sentences, please provide the native equivalent/translations in [target_language] for ALL "
+    prompt += "of the sentences. Include these translations in a seperate list in the same order that they appear in the first list "
+    prompt += "to be used as a reference/answer-key.\n\n"
+    prompt += "Word List for Sentence Generation:\n" + masterWordList
+
+
+    # Replace placeholders
+    prompt = prompt.replace("[grammatical_difficulty_level]", GRAMMATICAL_DIFFICULTY_LEVEL)
+    prompt = prompt.replace("[native_language]", NATIVE_LANGUAGE)
+    prompt = prompt.replace("[target_language]", TARGET_LANGUAGE)
+
+    return prompt
+
+# Sends the LLM prompt to ChatGPT
+def sendChatGPTPrompt(prompt): # TODO
+    return None
+
+
+## ~~~  Additional Output Functions  ~~~ ##
+
+# Outputs the word list to a file called 'Output.txt'
+def outputWordListtoFile(masterWordList): # TODO
+    return None
+
+
+## ~~~  MAIN  ~~~ ##
 def main():
-    deckName = INCLUDE_DECKS
-    deckField = DECK_FIELDS
+    deckNames = INCLUDE_DECKS
+    deckFields = DECK_FIELDS
+
+    # ERROR CHECKING: Make sure each deck to be included has a corresponding field to scrape.
+    if len(deckNames) != len(deckFields):
+        print("Error: Number of decks to include does not match number of fields...")
+        return -1
+
+    # TODO: Make all of this user specifiable.
+    # Sets the seperator of the returned word list
     seperator = ', ' # TODO: Temporary placeholder. Include this option elsewhere to allow user specification.
-    # regex patterns... TODO: Make this user specifiable.
-    addPattern = 'w:<word>' # TODO: Not regex right now, but make it regex!
+    # Used to add a pattern of text to each word in the word list
+    addPattern = '<word>' # 'w:<word>' # TODO: Not regex right now, but make it regex!
+    # Used to remove a regex pattern from each word returned in the Anki query
     remPattern = re.compile('\(.*\)')
-    print(deckName) # TODO: Debugging Purposes
-    print(deckField) # TODO: Debugging Purposes
 
-    cardIDs = getCardIDs(deckName)
-    cardsInfo = getCardInfo(cardIDs)
+    masterWordList = ""
 
-    compiledCardFieldList = compileCardFieldsList(cardsInfo, deckField, seperator, addPattern, remPattern)
-    print(compiledCardFieldList)
+    for i in range(0, len(deckNames)):
+        cardIDs = getCardIDs(deckNames[i])
+        cardsInfo = getCardInfo(cardIDs)
+        compiledWordList = compileCardFields(cardsInfo, deckFields[i], seperator, addPattern, remPattern)
+
+        masterWordList += compiledWordList
+
+    prompt = createLLMPrompt(masterWordList)
 
     return
 

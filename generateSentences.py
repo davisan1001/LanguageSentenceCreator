@@ -128,7 +128,7 @@ def compileCardFields(cardsInfo, deckField, seperator=', ', addPattern='<word>',
 ## ~~~  LLM Functions  ~~~ ##
 
 # Returns the full prompt for an LLM
-def createLLMPrompt(masterWordList, grammaticalDifficultyLevel, nativeLanguage, targetLanguage): # TODO
+def createLLMPrompt(masterWordList): # TODO
     prompt = "Create 30 sentences of [grammatical_difficulty_level] grammatical difficulty in [native_language] "
     prompt += "based ONLY on the list of words following this paragraph.\n"
     prompt += "DO NOT include words that are not included in the following list.\n"

@@ -1,9 +1,14 @@
 import os
 from dotenv import load_dotenv
+import argparse
 import json
 import requests
 import re
 import openai
+
+## ~~~  Global Variables  ~~~ ##
+parser = None
+args = None
 
 load_dotenv(override=True)
 
@@ -19,8 +24,8 @@ NATIVE_LANGUAGE = os.getenv("NATIVE_LANGUAGE")
 TARGET_LANGUAGE = os.getenv("TARGET_LANGUAGE")
 GRAMMATICAL_DIFFICULTY_LEVEL = os.getenv("GRAMMATICAL_DIFFICULTY_LEVEL")
 
-HTML_CLEANR = re.compile('<.*?>|\&\S.*?\;')
-DIGIT_CLEANR = re.compile('\d*')
+HTML_CLEANR = re.compile(r'<.*?>|\&\S.*?\;')
+DIGIT_CLEANR = re.compile(r'\d*')
 
 # Examples
 '''
@@ -128,7 +133,7 @@ def compileCardFields(cardsInfo, deckField, seperator=', ', addPattern='<word>',
 ## ~~~  LLM Functions  ~~~ ##
 
 # Returns the full prompt for an LLM
-def createLLMPrompt(masterWordList): # TODO
+def createLLMPrompt(masterWordList):
     prompt = "Create 30 sentences of [grammatical_difficulty_level] grammatical difficulty in [native_language] "
     prompt += "based ONLY on the list of words following this paragraph.\n"
     prompt += "DO NOT include words that are not included in the following list.\n"
@@ -138,7 +143,8 @@ def createLLMPrompt(masterWordList): # TODO
     prompt += "to be used as a reference/answer-key.\n\n"
     prompt += "Word List for Sentence Generation:\n" + masterWordList
 
-
+    # TODO Check if placeholders are specified in the dotenv. If not, ask the user for their values using the CLI.
+    
     # Replace placeholders
     prompt = prompt.replace("[grammatical_difficulty_level]", GRAMMATICAL_DIFFICULTY_LEVEL)
     prompt = prompt.replace("[native_language]", NATIVE_LANGUAGE)
@@ -153,13 +159,41 @@ def sendChatGPTPrompt(prompt): # TODO
 
 ## ~~~  Additional Output Functions  ~~~ ##
 
-# Outputs the word list to a file called 'Output.txt'
-def outputWordListtoFile(masterWordList): # TODO
+# Outputs a given string to a file
+def outputToFile(str, filename): # TODO
     return None
 
 
 ## ~~~  MAIN  ~~~ ##
+def setupArgParser():
+    global parser, args
+
+    parser = argparse.ArgumentParser(
+                    formatter_class=argparse.RawDescriptionHelpFormatter,
+                    prog='sentenceGenerator',
+                    description='Generate sentences in your language of choice with a grammatical difficulty of choice, using a parsed list of words from Anki decks.',
+                    epilog='''If no command line arguments are specified, the default behaviour is:
+                    \r1. extract and compile all words from Anki decks specified in the dotenv, comma seperated, with parenthesized content removed, and with nothing added.
+                    \r2. Compile an LLM prompt to construct sentences based on what is specified in the dotenv or gathered through the CLI
+                    \r3. Send the prompt to ChatGPT via the OpenAI API, and
+                    \r4. Print the response on the CLI.
+                    ''')
+
+    parser.add_argument('-ps', '--parseSeperator', nargs=1, help='Specify a custom seperator for the word list gathered from Anki decks. Default if not specified = \', \'.')
+    parser.add_argument('-pa', '--parseAddPattern', nargs=1, help='Specify a custom pattern to add to each word parsed from Anki. The string "<word>" in your specified pattern will be replaced with parsed anki word. Default if not specified = \'<word>\'.')
+    parser.add_argument('-pr', '--parseRemPattern', nargs=1, help='Specify a custom regex to remove all matching parts from each word parsed from Anki. This is helpful is you need to remove things like parentheses. Default if not specified = \'\(.*\)\' --> removes everything in parentheses.')
+    parser.add_argument('-a', '--getAnkiParse', action='store_true', help='Output the parse of all words gathered from Anki decks only. Do not create prompt or send to ChatGPT.')
+    parser.add_argument('-p', '--getPrompt', action='store_true', help='Output the LLM prompt only. Do not send prompt to chatGPT API.')
+    parser.add_argument('-o', '--outputFile', nargs='?', default="Output.txt", help='Output to a file instead of the command line. Default = "Output.txt".')
+    parser.add_argument('-v', '--verbose', action='store_true')
+
+    args = parser.parse_args()
+    return
+
 def main():
+    # Setup argparse
+    setupArgParser()
+
     deckNames = INCLUDE_DECKS
     deckFields = DECK_FIELDS
 
@@ -170,14 +204,26 @@ def main():
 
     # TODO: Make all of this user specifiable.
     # Sets the seperator of the returned word list
-    seperator = ', ' # TODO: Temporary placeholder. Include this option elsewhere to allow user specification.
+    if(args.parseSeperator):
+        seperator = args.parseSeperator[0]
+    else:
+        seperator = ', '
     # Used to add a pattern of text to each word in the word list
-    addPattern = '<word>' # 'w:<word>' # TODO: Not regex right now, but make it regex!
+    if(args.parseAddPattern):
+        addPattern = args.parseAddPattern[0]
+    else:
+        addPattern = '<word>' # 'w:<word>' # TODO: Not regex right now, but make it regex!
     # Used to remove a regex pattern from each word returned in the Anki query
-    remPattern = re.compile('\(.*\)')
+    if(args.parseRemPattern):
+        remPattern = re.compile(args.parseRemPattern[0])
+    else:
+        remPattern = re.compile(r'\(.*\)') # Default removes anything in brackets ()
 
+    # TODO: Test connection to AnkiConnect is open and ready. If not, provide a detailed error and exit.
+
+    # Build the entire word list from all specified Anki decks
     masterWordList = ""
-
+    
     for i in range(0, len(deckNames)):
         cardIDs = getCardIDs(deckNames[i])
         cardsInfo = getCardInfo(cardIDs)
@@ -185,8 +231,21 @@ def main():
 
         masterWordList += compiledWordList
 
-    prompt = createLLMPrompt(masterWordList)
-
+    if(args.getAnkiParse):
+        print(masterWordList)
+        if(args.outputFile):
+            outputToFile(masterWordList, args.outputFile[0])
+    else:
+        prompt = createLLMPrompt(masterWordList)
+        if(args.getPrompt):
+            print(prompt)
+            if(args.outputFile):
+                outputToFile(prompt, args.outputFile[0])
+        else:
+            # TODO: Make sure ChatGPT API key exists and that it works
+            # TODO: Implement sending prompt to chatGPT
+            return
+    
     return
 
 if __name__ == "__main__":

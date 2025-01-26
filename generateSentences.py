@@ -1,5 +1,5 @@
 import os
-from dotenv import load_dotenv
+from dotenv import load_dotenv, dotenv_values
 import argparse
 import json
 import requests
@@ -9,9 +9,8 @@ import openai
 ## ~~~  Global Variables  ~~~ ##
 parser = None
 args = None
-
+'''
 load_dotenv(override=True)
-
 CHATGPT_API_KEY = os.getenv('CHATGPT_API_KEY')
 ANKI_URL = os.getenv("ANKI_URL") # 'http://localhost:8765"
 
@@ -23,6 +22,31 @@ DECK_FIELDS = [val.strip() for val in DECK_FIELDS]
 NATIVE_LANGUAGE = os.getenv("NATIVE_LANGUAGE")
 TARGET_LANGUAGE = os.getenv("TARGET_LANGUAGE")
 GRAMMATICAL_DIFFICULTY_LEVEL = os.getenv("GRAMMATICAL_DIFFICULTY_LEVEL")
+'''
+config = dotenv_values(".env")
+
+if "CHATGPT_API_KEY" in config: CHATGPT_API_KEY = config["CHATGPT_API_KEY"]
+else: CHATGPT_API_KEY = None
+if "ANKI_URL" in config: ANKI_URL = config["ANKI_URL"] # 'http://localhost:8765"
+else: ANKI_URL = None
+
+if "INCLUDE_DECKS" in config:
+    INCLUDE_DECKS = config["INCLUDE_DECKS"].split(';')
+    INCLUDE_DECKS = [val.strip() for val in INCLUDE_DECKS]
+else:
+    INCLUDE_DECKS = None
+if "DECK_FIELDS" in config:
+    DECK_FIELDS = config["DECK_FIELDS"].split(';')
+    DECK_FIELDS = [val.strip() for val in DECK_FIELDS]
+else:
+    DECK_FIELDS = None
+
+if "NATIVE_LANGUAGE" in config: NATIVE_LANGUAGE = config["NATIVE_LANGUAGE"]
+else: NATIVE_LANGUAGE = None
+if "TARGET_LANGUAGE" in config: TARGET_LANGUAGE = config["TARGET_LANGUAGE"]
+else: TARGET_LANGUAGE = None
+if "GRAMMATICAL_DIFFICULTY_LEVEL" in config: GRAMMATICAL_DIFFICULTY_LEVEL = config["GRAMMATICAL_DIFFICULTY_LEVEL"]
+else: GRAMMATICAL_DIFFICULTY_LEVEL = None
 
 HTML_CLEANR = re.compile(r'<.*?>|\&\S.*?\;')
 DIGIT_CLEANR = re.compile(r'\d*')
@@ -69,7 +93,16 @@ def removeWordPattern(str, pattern):
     return re.sub(pattern, "", str)
 
 
-## ~~~  AnkiConnect Field Extraction Functions  ~~~ ##
+## ~~~  AnkiConnect Functions  ~~~ ##
+
+# Test the AnkiConnect Connection. Return 1 if successful, Return -1 if failed.
+def testAnkiConnectConnection():
+    if(ANKI_URL == None):
+        print("Error: No AnkiConnect URL provided in dotenv.")
+        return -1
+    # TODO: Test connection.
+    return 1
+
 
 # Returns the response section of returned data from AnkiConnect.
 #   Returns "ERROR" if an error occured.
@@ -134,16 +167,27 @@ def compileCardFields(cardsInfo, deckField, seperator=', ', addPattern='<word>',
 
 # Returns the full prompt for an LLM
 def createLLMPrompt(masterWordList):
+    global GRAMMATICAL_DIFFICULTY_LEVEL, NATIVE_LANGUAGE, TARGET_LANGUAGE
+
     prompt = "Create 30 sentences of [grammatical_difficulty_level] grammatical difficulty in [native_language] "
     prompt += "based ONLY on the list of words following this paragraph.\n"
     prompt += "DO NOT include words that are not included in the following list.\n"
-    prompt += "The intention for these sentences is to be translated from [native_langauge] to [target_language], for practice.\n"
+    prompt += "The intention for these sentences is to be translated from [native_language] to [target_language], for practice.\n"
     prompt += "Along with the list of 50 sentences, please provide the native equivalent/translations in [target_language] for ALL "
     prompt += "of the sentences. Include these translations in a seperate list in the same order that they appear in the first list "
     prompt += "to be used as a reference/answer-key.\n\n"
     prompt += "Word List for Sentence Generation:\n" + masterWordList
 
-    # TODO Check if placeholders are specified in the dotenv. If not, ask the user for their values using the CLI.
+    # Check if placeholders are specified in the dotenv. If not, ask the user for their values using the CLI.
+    if(GRAMMATICAL_DIFFICULTY_LEVEL == None):
+        print("No grammatical difficulty level specified...")
+        GRAMMATICAL_DIFFICULTY_LEVEL = input("Please specify grammatical difficulty level: ")
+    if(NATIVE_LANGUAGE == None):
+        print("No native language specified...")
+        TARGET_LANGUAGE = input("Please specify native language: ")
+    if(TARGET_LANGUAGE == None):
+        print("No target language specified...")
+        TARGET_LANGUAGE = input("Please specify target language: ")
     
     # Replace placeholders
     prompt = prompt.replace("[grammatical_difficulty_level]", GRAMMATICAL_DIFFICULTY_LEVEL)
@@ -181,7 +225,7 @@ def setupArgParser():
 
     parser.add_argument('-ps', '--parseSeperator', nargs=1, help='Specify a custom seperator for the word list gathered from Anki decks. Default if not specified = \', \'.')
     parser.add_argument('-pa', '--parseAddPattern', nargs=1, help='Specify a custom pattern to add to each word parsed from Anki. The string "<word>" in your specified pattern will be replaced with parsed anki word. Default if not specified = \'<word>\'.')
-    parser.add_argument('-pr', '--parseRemPattern', nargs=1, help='Specify a custom regex to remove all matching parts from each word parsed from Anki. This is helpful is you need to remove things like parentheses. Default if not specified = \'\(.*\)\' --> removes everything in parentheses.')
+    parser.add_argument('-pr', '--parseRemPattern', nargs=1, help='Specify a custom regex to remove all matching parts from each word parsed from Anki. This is helpful is you need to remove things like parentheses. Default if not specified = \'\\(.*\\)\' --> removes everything in parentheses.')
     parser.add_argument('-a', '--getAnkiParse', action='store_true', help='Output the parse of all words gathered from Anki decks only. Do not create prompt or send to ChatGPT.')
     parser.add_argument('-p', '--getPrompt', action='store_true', help='Output the LLM prompt only. Do not send prompt to chatGPT API.')
     parser.add_argument('-o', '--outputFile', nargs='?', default="Output.txt", help='Output to a file instead of the command line. Default = "Output.txt".')
@@ -194,15 +238,23 @@ def main():
     # Setup argparse
     setupArgParser()
 
+
+    # ERROR CHECKING: Make sure that at least one deckName exists to parse from Anki
+    if(INCLUDE_DECKS == None):
+        print("Error: No deck names are specified in dotenv... At least one is required... Exiting.")
+        return -1
+    if(DECK_FIELDS == None):
+        print("Error: No deck fields are specified in dotenv... At least one is required... Exiting.")
+        return -1
+    
     deckNames = INCLUDE_DECKS
     deckFields = DECK_FIELDS
-
+    
     # ERROR CHECKING: Make sure each deck to be included has a corresponding field to scrape.
-    if len(deckNames) != len(deckFields):
+    if(len(deckNames) != len(deckFields)):
         print("Error: Number of decks to include does not match number of fields...")
         return -1
 
-    # TODO: Make all of this user specifiable.
     # Sets the seperator of the returned word list
     if(args.parseSeperator):
         seperator = args.parseSeperator[0]
@@ -219,7 +271,9 @@ def main():
     else:
         remPattern = re.compile(r'\(.*\)') # Default removes anything in brackets ()
 
-    # TODO: Test connection to AnkiConnect is open and ready. If not, provide a detailed error and exit.
+    # ERROR CHECKING: Test connection to AnkiConnect is open and ready. If not, provide a detailed error and exit.
+    if(testAnkiConnectConnection() < 0):
+        return -1
 
     # Build the entire word list from all specified Anki decks
     masterWordList = ""
@@ -231,22 +285,30 @@ def main():
 
         masterWordList += compiledWordList
 
+    # Variable to hold output text.
+    finalOutput = ""
+
     if(args.getAnkiParse):
-        print(masterWordList)
-        if(args.outputFile):
-            outputToFile(masterWordList, args.outputFile[0])
+        finalOutput = masterWordList
     else:
         prompt = createLLMPrompt(masterWordList)
         if(args.getPrompt):
-            print(prompt)
-            if(args.outputFile):
-                outputToFile(prompt, args.outputFile[0])
+            finalOutput = prompt
         else:
-            # TODO: Make sure ChatGPT API key exists and that it works
+            # Make sure ChatGPT API key exists. Else, revert to prompt only output.
+            if(CHATGPT_API_KEY == None):
+                print("Error: No ChatGPT API Key specified in dotenv... Returning prompt only.")
+                finalOutput = prompt
             # TODO: Implement sending prompt to chatGPT
             return
     
-    return
+    # Output the final compiled output to CLI or File
+    if(args.outputFile):
+        outputToFile(finalOutput, args.outputFile[0])
+    else:
+        print(finalOutput)
+    
+    return 1
 
 if __name__ == "__main__":
     main()

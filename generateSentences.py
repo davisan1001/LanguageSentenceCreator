@@ -51,26 +51,7 @@ else: GRAMMATICAL_DIFFICULTY_LEVEL = None
 HTML_CLEANR = re.compile(r'<.*?>|\&\S.*?\;')
 DIGIT_CLEANR = re.compile(r'\d*')
 
-# Examples
-'''
-findCards : Searches for cards based on a query
-{
-    "action": "findCards",
-    "version": 6,
-    "params": {
-        "query": "deck:current"
-    }
-}
 
-cardsInfo : Returns all the information from the card id's given
-{
-    "action": "cardsInfo",
-    "version": 6,
-    "params": {
-        "cards": [1498938915662, 1502098034048]
-    }
-}
-'''
 ## ~~~  Text Cleaning Functions  ~~~ ##
 
 def cleanText(raw, remDigits=False):

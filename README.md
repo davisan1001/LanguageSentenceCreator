@@ -14,6 +14,7 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
     ```
 - Anki Desktop installed with the AnkiConnect plugin running.
 - ChatGPT developer account with a valid API key. (optional)
+> **_NOTE:_**  An OpenAPI developer account and API key is not required. Simply run the program with the `-p` flag to output the prompt only, then you can copy and paste it into your LLM of choice.
 
 ### Installing
 
@@ -25,7 +26,7 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
 - Add a '.env' file to the root directory of the application and add the following information
   ```
   # ChatGPT API Key
-  CHATGPT_API_KEY = <api_key>
+  CHATGPT_API_KEY = <api_key>                                 # Leave this blank if not using.
   
   # Anki Connect Settings
   ANKI_URL = http://localhost:<AnkiConnect_port>
@@ -41,7 +42,6 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
 
 ### Executing program
 
-**_NOTE:_**  An OpenAPI developer account and API key is not required. Simply run the program with the `-p` flag to output the prompt only, then you can copy and paste it into your LLM of choice.
 - Once you have everything setup, simply run the python script with `python3 generateSentences.py`
 - Please view the help page with `python3 generateSentences.py -h` to view all available options.
 

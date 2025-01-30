@@ -1,6 +1,6 @@
 # Foreign Language Sentence Creation Application
 
-This python script pulls studied/learned cards from Anki foreign language vocabulary decks, compiles the words and asks ChatGPT for sentences of a specific level of grammatical difficulty in your native language. The intent is to practice translating to your foreign language with these generated sentences.
+This python script pulls studied/learned cards from Anki foreign language vocabulary decks, compiles the words and asks ChatGPT for sentences of a specific level of grammatical difficulty in your native language. The intent is to practice translating to your intended foreign language with these generated sentences.
 
 ## Getting Started
 
@@ -13,14 +13,14 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
     pip install -r requirements.txt
     ```
 - Anki Desktop installed with the AnkiConnect plugin running.
-- ChatGPT developer account with a valid API key.
+- ChatGPT developer account with a valid API key. (optional)
 
 ### Installing
 
 - Clone the repository to your local machine.
 - Create a virtual env and install all required dependencies
   ```
-  python3 -m venv new_dev_venv && source new_dev_venv/bin/activate && pip install -r requirements.txt
+  python3 -m venv my_venv && source my_venv/bin/activate && pip install -r requirements.txt
   ```
 - Add a '.env' file to the root directory of the application and add the following information
   ```
@@ -41,7 +41,9 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
 
 ### Executing program
 
+**_NOTE:_**  An OpenAPI developer account and API key is not required. Simply run the program with the `-p` flag to output the prompt only, then you can copy and paste it into your LLM of choice.
 - Once you have everything setup, simply run the python script with `python3 generateSentences.py`
+- Please view the help page with `python3 generateSentences.py -h` to view all available options.
 
 
 ## For the Developer

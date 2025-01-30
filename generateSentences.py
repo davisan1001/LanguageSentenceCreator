@@ -4,6 +4,8 @@ import argparse
 import json
 import requests
 import re
+import copy
+from openai import OpenAI
 import openai
 
 ## ~~~  Global Variables  ~~~ ##
@@ -25,8 +27,10 @@ GRAMMATICAL_DIFFICULTY_LEVEL = os.getenv("GRAMMATICAL_DIFFICULTY_LEVEL")
 '''
 config = dotenv_values(".env")
 
-if "CHATGPT_API_KEY" in config: CHATGPT_API_KEY = config["CHATGPT_API_KEY"]
-else: CHATGPT_API_KEY = None
+if "OPENAI_API_KEY" in config: OPENAI_API_KEY = config["OPENAI_API_KEY"]
+else: OPENAI_API_KEY = None
+if "OPENAI_API_ORGANIZATION" in config: OPENAI_API_ORGANIZATION = config["OPENAI_API_ORGANIZATION"]
+else: OPENAI_API_ORGANIZATION = None
 if "ANKI_URL" in config: ANKI_URL = config["ANKI_URL"] # 'http://localhost:8765"
 else: ANKI_URL = None
 
@@ -81,7 +85,20 @@ def testAnkiConnectConnection():
     if(ANKI_URL == None):
         print("Error: No AnkiConnect URL provided in dotenv.")
         return -1
-    # TODO: Test connection.
+    
+    # Test connection.
+    try:
+        response = requests.options(ANKI_URL)
+        if not response.ok:
+            print(f"Error: AnkiConnect API is accessible, but an error occured. Response code : {response.status_code}")
+            return -1
+    except (requests.exceptions.HTTPError, requests.exceptions.ConnectionError) as e:
+        print("Error: Could not reach AnkiConnect.\nMake sure the URL and port are correct and that Anki is open and running in the background.")
+        return -1
+    except Exception as e:
+        print(f"Error: An unknown error occurred: {e}.")
+        return -1
+    
     return 1
 
 
@@ -99,12 +116,12 @@ def getAnki(request_data):
         return "ERROR"
 
 # Returns a list of Anki Card IDs in the deck
-def getCardIDs(deckName):
+def getCardIDs(deckName, queryParams):
     request = {}
     params = {}
     request['action'] = 'findCards'
     request['version'] = 6
-    params["query"] = '"deck:' + deckName + '"' + " -is:new -is:suspended" # TODO: Make query parameters modifiable
+    params["query"] = '"deck:' + deckName + '"' + queryParams
     request['params'] = params
     json_request_data = json.dumps(request, indent=2, ensure_ascii=False)
     return getAnki(json_request_data)
@@ -120,27 +137,26 @@ def getCardInfo(cardIDs):
     json_request_data = json.dumps(request, indent=2, ensure_ascii=False)
     return getAnki(json_request_data)
 
-# Returns a 'seperator' seperated list of words compiled from the 'deckField' of all cards in 'cardsInfo'. Fields extract are also cleaned.
-def compileCardFields(cardsInfo, deckField, seperator=', ', addPattern='<word>', remPattern='', existingSeperatorFilter=',|;', splitByExistingSeperator=False):
-    # TODO: Compile a list of all fields, cleaned and comma seperated.
+# Returns a 'separator' seperated list of words compiled from the 'deckField' of all cards in 'cardsInfo'. Fields extract are also cleaned.
+def compileCardFields(cardsInfo, deckField, separator, addPattern, remPattern, existingSeparatorFilter, splitByExistingSeparator):
     compiledCardFields = ""
     numCards = len(cardsInfo)
 
     for i in range(0, numCards):
         cleanedField = cleanText(cardsInfo[i]['fields'][deckField]['value'])
 
-        # Split any existing 'seperator' seperated words in the field to process individually.
-        if (splitByExistingSeperator):
-            splitField = re.split(existingSeperatorFilter, cleanedField)
+        # Split any existing 'separator' seperated words in the field to process individually.
+        if (splitByExistingSeparator):
+            splitField = re.split(existingSeparatorFilter, cleanedField)
             for j in range(0, len(splitField)):
                 splitField[j] = cleanText(addWordPattern(removeWordPattern(splitField[j], remPattern), addPattern), remDigits=True)
-            cleanedField = seperator.join(splitField)
+            cleanedField = separator.join(splitField)
         else:
             cleanedField = cleanText(addWordPattern(removeWordPattern(cleanedField, remPattern), addPattern), remDigits=True)
 
         compiledCardFields += cleanedField
         if (i < numCards-1):
-            compiledCardFields += seperator
+            compiledCardFields += separator
     return compiledCardFields
 
 
@@ -160,13 +176,13 @@ def createLLMPrompt(masterWordList):
     prompt += "Word List for Sentence Generation:\n" + masterWordList
 
     # Check if placeholders are specified in the dotenv. If not, ask the user for their values using the CLI.
-    if(GRAMMATICAL_DIFFICULTY_LEVEL == None):
+    while(GRAMMATICAL_DIFFICULTY_LEVEL == None or GRAMMATICAL_DIFFICULTY_LEVEL.strip() == ""):
         print("No grammatical difficulty level specified...")
         GRAMMATICAL_DIFFICULTY_LEVEL = input("Please specify grammatical difficulty level: ")
-    if(NATIVE_LANGUAGE == None):
+    while(NATIVE_LANGUAGE == None or NATIVE_LANGUAGE.strip() == ""):
         print("No native language specified...")
-        TARGET_LANGUAGE = input("Please specify native language: ")
-    if(TARGET_LANGUAGE == None):
+        NATIVE_LANGUAGE = input("Please specify native language: ")
+    while(TARGET_LANGUAGE == None or TARGET_LANGUAGE.strip() == ""):
         print("No target language specified...")
         TARGET_LANGUAGE = input("Please specify target language: ")
     
@@ -178,15 +194,47 @@ def createLLMPrompt(masterWordList):
     return prompt
 
 # Sends the LLM prompt to ChatGPT
-def sendChatGPTPrompt(prompt): # TODO
-    return None
+def sendChatGPTPrompt(prompt):
+    client = OpenAI(
+        api_key=OPENAI_API_KEY
+    )
+
+    try:
+        completion = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {"role": "developer", "content": "You are a helpful assistant."},
+                {"role": "user", "content": prompt}
+            ]
+        )
+    except openai.APIConnectionError as e:
+        print("The server could not be reached")
+        print(e.__cause__)  # an underlying Exception, likely raised within httpx.
+        return -1
+    except (openai.AuthenticationError, openai.PermissionDeniedError) as e:
+        print("An authentication/permission error occured. Your API key may be invalid.")
+        print(e.response)
+        return -1
+    except openai.RateLimitError as e:
+        print("A RateLimitError code was received; You may be out of requests.")
+        return -1
+    except openai.APIStatusError as e:
+        print("Another non-200-range status code was received")
+        print(e.status_code)
+        print(e.response)
+        return -1
+
+    return completion.choices[0].message
 
 
 ## ~~~  Additional Output Functions  ~~~ ##
 
 # Outputs a given string to a file
-def outputToFile(str, filename): # TODO
-    return None
+def outputToFile(content, filename):
+    file = open(filename, "w")
+    file.write(content)
+    file.close()
+    return
 
 
 ## ~~~  MAIN  ~~~ ##
@@ -204,13 +252,14 @@ def setupArgParser():
                     \r4. Print the response on the CLI.
                     ''')
 
-    parser.add_argument('-ps', '--parseSeperator', nargs=1, help='Specify a custom seperator for the word list gathered from Anki decks. Default if not specified = \', \'.')
+    parser.add_argument('-ps', '--parseSeparator', nargs=1, help='Specify a custom separator for the word list gathered from Anki decks. Default if not specified = \', \'.')
     parser.add_argument('-pa', '--parseAddPattern', nargs=1, help='Specify a custom pattern to add to each word parsed from Anki. The string "<word>" in your specified pattern will be replaced with parsed anki word. Default if not specified = \'<word>\'.')
     parser.add_argument('-pr', '--parseRemPattern', nargs=1, help='Specify a custom regex to remove all matching parts from each word parsed from Anki. This is helpful is you need to remove things like parentheses. Default if not specified = \'\\(.*\\)\' --> removes everything in parentheses.')
+    parser.add_argument('-se', '--splitExisting', nargs=1, help='Specify if you want existing separators in the anki card to be split and handled as separate words. Example: \',|;\' will separate existing commas or semicolons and process each word split individually.')
+    parser.add_argument('-qp', '--queryParams', nargs=1, help='Specify a custom Anki query. Default if not specified = " -is:new" -> get\'s all cards that have already been seen/learned by the user.')
     parser.add_argument('-a', '--getAnkiParse', action='store_true', help='Output the parse of all words gathered from Anki decks only. Do not create prompt or send to ChatGPT.')
     parser.add_argument('-p', '--getPrompt', action='store_true', help='Output the LLM prompt only. Do not send prompt to chatGPT API.')
-    parser.add_argument('-o', '--outputFile', nargs='?', default="Output.txt", help='Output to a file instead of the command line. Default = "Output.txt".')
-    parser.add_argument('-v', '--verbose', action='store_true')
+    parser.add_argument('-o', '--outputFile', nargs=1, help='Output to a file instead of the command line.')
 
     args = parser.parse_args()
     return
@@ -236,11 +285,11 @@ def main():
         print("Error: Number of decks to include does not match number of fields...")
         return -1
 
-    # Sets the seperator of the returned word list
-    if(args.parseSeperator):
-        seperator = args.parseSeperator[0]
+    # Sets the separator of the returned word list
+    if(args.parseSeparator):
+        separator = args.parseSeparator[0]
     else:
-        seperator = ', '
+        separator = ', '
     # Used to add a pattern of text to each word in the word list
     if(args.parseAddPattern):
         addPattern = args.parseAddPattern[0]
@@ -252,7 +301,19 @@ def main():
     else:
         remPattern = re.compile(r'\(.*\)') # Default removes anything in brackets ()
 
-    # ERROR CHECKING: Test connection to AnkiConnect is open and ready. If not, provide a detailed error and exit.
+    if(args.splitExisting != None):
+        splitByExistingSeparator = True
+        existingSeparatorFilter = args.splitExisting[0]
+    else:
+        splitByExistingSeparator = False
+        existingSeparatorFilter = ''
+
+    if(args.queryParams != None):
+        queryParams = args.queryParams[0]
+    else:
+        queryParams = " -is:new"
+
+    # Test connection to AnkiConnect is open and ready. If not, provide a detailed error and exit.
     if(testAnkiConnectConnection() < 0):
         return -1
 
@@ -260,9 +321,9 @@ def main():
     masterWordList = ""
     
     for i in range(0, len(deckNames)):
-        cardIDs = getCardIDs(deckNames[i])
+        cardIDs = getCardIDs(deckNames[i], queryParams)
         cardsInfo = getCardInfo(cardIDs)
-        compiledWordList = compileCardFields(cardsInfo, deckFields[i], seperator, addPattern, remPattern)
+        compiledWordList = compileCardFields(cardsInfo, deckFields[i], separator, addPattern, remPattern, existingSeparatorFilter, splitByExistingSeparator)
 
         masterWordList += compiledWordList
 
@@ -277,14 +338,15 @@ def main():
             finalOutput = prompt
         else:
             # Make sure ChatGPT API key exists. Else, revert to prompt only output.
-            if(CHATGPT_API_KEY == None):
+            if(OPENAI_API_KEY == None):
                 print("Error: No ChatGPT API Key specified in dotenv... Returning prompt only.")
                 finalOutput = prompt
-            # TODO: Implement sending prompt to chatGPT
-            return
-    
+            else:
+                finalOutput = sendChatGPTPrompt(prompt)
+                if finalOutput == -1: return -1
+
     # Output the final compiled output to CLI or File
-    if(args.outputFile):
+    if(args.outputFile != None):
         outputToFile(finalOutput, args.outputFile[0])
     else:
         print(finalOutput)

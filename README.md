@@ -43,7 +43,7 @@ This python script pulls studied/learned cards from Anki foreign language vocabu
 ### Executing program
 
 - Once you have everything setup, simply run the python script with `python3 generateSentences.py`
-- Please view the help page with `python3 generateSentences.py -h` to view all available options.
+> Please view the help page with `python3 generateSentences.py -h` to view all available options.
 
 
 ## For the Developer
